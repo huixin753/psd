@@ -1,0 +1,314 @@
+GPU-Accelerated Percolation Model
+Accelerated Systems: Principles and Practice Coursework 2
+Exam Number: 185276
+April 8, 2025
+Contents
+1 Introduction 1
+2 Build Instructions 1
+2.1 Environment Setup . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 1
+2.2 CMake Configuration . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 1
+3 Design 2
+3.1 Programming Model Choice . . . . . . . . . . . . . . . . . . . . . . . . . 2
+3.2 Algorithm and Implementation. . . . . . . . . . . . . . . . . . . . . . . . 2
+3.2.1 Data Structures . . . . . . . . . . . . . . . . . . . . . . . . . . . . 2
+3.2.2 Halo Exchange . . . . . . . . . . . . . . . . . . . . . . . . . . . . 2
+3.2.3 Batched Kernel Updates . . . . . . . . . . . . . . . . . . . . . . . 3
+3.2.4 Convergence Detection . . . . . . . . . . . . . . . . . . . . . . . 3
+3.2.5 Overall Flow . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 3
+3.3 Profiling . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4
+3.3.1 Profiling Configuration and Summary . . . . . . . . . . . . . . . 4
+3.3.2 Timeline and Main Performance Characteristics . . . . . . . . . 4
+3.3.3 CPU-Side Usage . . . . . . . . . . . . . . . . . . . . . . . . . . . 5
+3.3.4 GPU-Side Usage . . . . . . . . . . . . . . . . . . . . . . . . . . . 5
+3.3.5 Potential Optimizations and Summary . . . . . . . . . . . . . . . 5
+4 Performance Results 6
+4.1 Experimental Setup . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 6
+4.2 Analysis . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 6
+5 Discussion 8
+5.1 Reflection on Performance . . . . . . . . . . . . . . . . . . . . . . . . . 8
+5.2 Comparison with Theoretical Limits . . . . . . . . . . . . . . . . . . . . . 8
+5.3 Further Improvements . . . . . . . . . . . . . . . . . . . . . . . . . . . . 8
+i
+1 Introduction
+This coursework concerns the adaptation of an existing CPU-only percolation code to
+exploit both multi-node parallelism and GPU acceleration on the Cirrus HPC system.
+The primary task involves porting the original MPI-based implementation to run effi-
+ciently on multiple nodes, targeting both CPU and GPU partitions.
+In the following sections, the chosen design approach is explained, along with the rel-
+evant compilation and execution steps on Cirrus. Subsequently, performance results
+are presented for various problem sizes and node configurations, and a discussion
+provides insights into optimization choices and potential future enhancements.
+2 Build Instructions
+2.1 Environment Setup
+OnCirrus,thefollowingmodulesmustbeloadedtoprovidetherequiredcompilersand
+libraries:
+module load cmake
+module load gcc/10.2.0
+module load nvidia/nvhpc-nompi/24.5
+module load openmpi/4.1.6-cuda-12.4
+module load oneapi
+module load compiler
+These modules ensure that the GNU toolchain and Intel OneAPI compilers are avail-
+able, as well as the necessary MPI implementation with CUDA compatibility.
+2.2 CMake Configuration
+Aftercloningtherepository(andreplacingperc_gpu.cppwiththesubmittedversion),
+create a build directory and invoke CMake with the following command:
+cmake -S src -B build \
+-DACC_MODEL=SYCL \
+-DCMAKE_BUILD_TYPE=Release \
+-DCMAKE_CXX_COMPILER=icpx
+To compile, run:
+cmake --build build -j 4
+To submit jobs, run:
+sbatch run-gpu-8.sh
+1
+3 Design
+3.1 Programming Model Choice
+An initial effort employed OpenMP offloading due to its straightforward integration with
+existingCPU-basedcodeandsimplecompilerdirectives(i.e.,#pragma omp). Various
+optimizations were attempted, such as overlapping halo exchanges with computation
+and reducing data transfers. However, the resulting OpenMP version tended to under-
+perform on NVIDIA V100 GPUs compared to the original CPU code.
+Consequently,theimplementationwasrevisedtouseSYCL(ACC_MODEL=SYCL),com-
+piled with Intel’s DPC++ (icpx). Several factors influenced this decision:
+1. Single-Source C++: SYCL relies on modern C++ templates, permitting simultane-
+ous host-device code in a unified environment.
+2. Buffer-Centric Memory Management: By controlling regions of interest through
+sycl::buffer and accessor, the application can synchronize only the bound-
+aries needed for percolation iterations.
+3. Flexible Kernel Launching: SYCL allows specifying nd_range kernels and of-
+ferslocalmemory(local_accessor)forblock-levelreductions,facilitatingefficient
+counting of changed cells.
+4. ImprovedPerformance: SubsequenttestsindicatedthattheSYCL-basedapproach
+consistently outpaced the earlier OpenMP offload version on the target GPU hard-
+ware, likely due to more explicit control over data movement and kernel batching.
+3.2 Algorithm and Implementation
+Thepercolationprocedurebeginswithatwo-dimensionalgrid,distributedamongmulti-
+pleMPIprocesses,whereeachfluidsiteisassignedanumericlabel. Ateveryiteration,
+eachsiteupdatesitslabeltothemaximumofitsownlabelandthoseofitsfournearest
+neighbors, thereby capturing how fluid regions expand or merge. Convergence occurs
+when no further label changes are detected across the entire grid.
+3.2.1 Data Structures
+EachMPIrankownsasubdomainofsize(sub_nx + 2)by(sub_ny + 2)(includ-
+ing one layer of halo cells). Two buffers, d_state and d_tmp, store the local labels
+on a SYCL device and allow double-buffering during updates. Additional small buffers,
+d_halo_sendandd_halo_recv,temporarilyholdboundarydataforcommunication
+with neighboring ranks.
+3.2.2 Halo Exchange
+Before each round of updates, only the outer rows and columns of the subdomain are
+transferred to and from adjacent processes to ensure that each rank sees the correct
+2
+boundary values. This is achieved by:
+1. Packingtheboundarycellsonthedevicesideintod_halo_sendusingthePackHaloKernel.
+2. Copying that buffer to the host and exchanging boundary elements via MPI_Irecv
+and MPI_Isend (or blocking calls), as shown in the halo_exchange function.
+3. Unpacking the received data back onto the device with UnpackHaloKernel.
+Because only a small portion of the domain is moved, host-device data transfers are
+minimized.
+3.2.3 Batched Kernel Updates
+Rather than performing a single update per kernel launch, the code merges multiple
+iterations into one kernel call, governed by a batchSize parameter. Here, a batch
+size of 6 has been found to strike the best balance: it lowers kernel launch overhead
+on larger domains while avoiding discrepancies in small-scale tests. If the batch size
+becomes too large, the GPU and CPU results may diverge for smaller problems due
+to delayed halo synchronization. The MultiStepsKernel illustrated in the listing
+iterates over each cell up to batchSize times. Within the kernel:
+1. Each work item (thread) reads its local cell value and that of its four neighbors.
+2. The maximum among these values is assigned to the cell in d_tmp.
+3. Alocalcounteraccumulateshowmanycellschanged,usingashared(local_accessor)
+array for partial reductions.
+4. After all steps finish, a final reduction adds this block-level change count to a global
+atomic variable (sum_buf).
+This approach reduces kernel launch overhead and often improves occupancy on the
+GPU.
+3.2.4 Convergence Detection
+Once the batched kernel completes, an MPI_Allreduce sums the local counts of
+changed cells across all MPI ranks, yielding a global measure of how many updates
+occurred. If this value is zero, the algorithm halts. Otherwise, the process repeats: a
+halo exchange is performed to refresh boundary data, and another batched kernel is
+launched to apply several more iterations.
+3.2.5 Overall Flow
+The main run() function, shown at the end of the listing, encapsulates:
+• A loop that continues until convergence or a maximum iteration limit is reached.
+• A halo_exchange call to synchronize the boundary cells among neighbors.
+3
+• A run_batch_steps_sycl invocation that performs the percolation steps on the
+device.
+• An MPI_Allreduce operation to detect global convergence.
+Thelocalbuffersd_stateandd_tmpareswappedwhennecessarytoensurethecor-
+rectfinaldistributionoflabels. Thisdesign,combiningmessage-passingfordistributed
+subdomains with batched GPU kernels, allows the program to scale to large grids and
+exploit device-level parallelism effectively.
+3.3 Profiling
+This section briefly summarizes Nsight Systems profiling of build/test, capturing
+both the CPU-side and GPU-side behavior when running SYCL with MPI on multiple
+GPUs. Figure1showsatimelineexcerpthighlightingkernellaunches,haloexchanges,
+and MPI communication.
+Figure 1: Snapshot of the Nsight Systems timeline.
+3.3.1 Profiling Configuration and Summary
+Command:
+nsys profile --trace=mpi,cuda -o output_sycl_large \
+build/test -s 98765 -p 0.3 -M 4096 -N 4096 -P 2 -Q 2 \
+-o large-7371310.png
+Key Observations:
+• CPU usage: The main MPI rank thread (ID 4116910) accounts for ∼99.4% CPU
+utilization, reflecting the time spent managing GPU operations and MPI calls.
+• Modulesummary: TheOSkernel([kernel.kallsyms]),libcuda.so,andUCX/Open
+MPI libraries (mca_pml_ucx.so, libucp.so) dominate CPU time, consistent with
+heavy message-passing and CUDA runtime activity in HPC applications.
+3.3.2 Timeline and Main Performance Characteristics
+1. Initialization (0–2.5s): SYCL GPU context creation, memory allocations, and MPI
+setup occupy most of the early CPU time.
+4
+2. Kernel Execution and Halo Exchange (2.5–6.5s):
+• CUDAkernelsappearascoloredsegments,interleavedwithMPI_Send/MPI_Recv
+calls for halo data.
+• Eachbatchofiterations(batchSize=6)reducesoverheadbyperformingmultiple
+updates per kernel launch.
+• Localmemory(local_accessor)isusedwithineachblockforpartialreductions
+of changed cells.
+3. Finalization (6.5–7.1s): The application completes MPI synchronization, copies fi-
+nal data back from the GPU, and exits.
+3.3.3 CPU-Side Usage
+CPU profiling shows:
+• Kernelcalls(25.82%)andCUDAruntime(18.36%): Handlingdevicemanagement,
+scheduling, and system-level operations.
+• UCX/OMPI libraries (∼30%): Reflects frequent halo exchanges via non-blocking
+sends/receives for boundary data.
+• Application code (7.88%): The percolation logic in build/test, with the remain-
+der split across system libraries.
+3.3.4 GPU-Side Usage
+On the V100 GPU (80 SMs, ∼836GiB/s):
+• Batch Updates: Each kernel executes up to 6 steps of label updates, reducing
+launch overhead.
+• Halo Sync Frequency: After each batch, halo exchange is performed; further over-
+lap with computation may reduce idle time.
+• Thread-Block Configuration: A tile size of 16x16 is used; more tuning could im-
+prove occupancy.
+3.3.5 Potential Optimizations and Summary
+From the Nsight Systems data, the main bottlenecks are the MPI halo exchanges and
+repeated kernel launches. The code already implements several optimizations:
+1. Batched Kernel Iterations: Using batchSize=6 reduces kernel launch overhead
+and host-device synchronization.
+2. LocalMemoryReductions: Accumulatingchanged-cellcountsinlocal_accessor
+helps minimize global atomic contention.
+5
+3. ManualHaloPacking/Unpacking: Packingjusttheboundarycellsintosmallbuffers
+(PackHaloKernel, UnpackHaloKernel) reduces data transfers.
+4 Performance Results
+4.1 Experimental Setup
+All measurements were performed on Cirrus, varying both the number of CPU ranks
+(1, 2, 4, 8) and GPU ranks (1, 4, 8). Three problem sizes were tested:
+• Small: 512×512
+• Median: 1024×2048
+• Large: 4096×4096
+The code was measured in the following scenarios:
+1. Baseline (CPU Only): Timings collected from CPU runs with 1, 2, 4, and 8 ranks.
+2. Cold-Start(GPU):ThetimingfortheveryfirstGPUrun(run0),capturingadditional
+overhead such as device initialization.
+3. Hot-Start (GPU): The average timing for subsequent GPU runs (run1 and run2),
+where device setup costs are partially amortized.
+4.2 Analysis
+Configuration Small Median Large
+run-cpu-1 2.117496 1.904793 1.558406
+run-cpu-2 1.188012 1.059928 0.876951
+run-cpu-4 0.722601 0.545608 0.442346
+run-cpu-8 0.365303 0.293207 0.233377
+run-gpu-1 2.091379 1.908047 1.602247
+run-gpu-4 0.518881 0.469945 0.391592
+run-gpu-8 0.271738 0.242286 0.199587
+Table 1: Baseline timings.
+Table 1 shows the baseline timings, where CPU runs (labelled cpuX) generally de-
+creasewithmoreranks. Forinstance,cpu8achieves0.2334sforthelargegrid. Mean-
+while, the GPU runs (labelled gpuX) also improve with increasing rank counts: gpu8
+records 0.1996s on the large grid, which is slightly faster than cpu8. On the small
+grid, however, gpu1 (2.09s) and single-rank CPU (2.12s) are close, suggesting GPU
+initialization overhead is not substantial in this baseline measurement.
+Table 2 highlights the cold-start scenario (i.e., each configuration’s first run or run0).
+Notably, gpu1 on the small grid reaches 0.0766s, beating its baseline time. This im-
+provement may stem from memory allocation differences or the timing of device setup.
+6
+Configuration Small Median Large
+run-cpu-1 0.524074 0.327583 0.481552
+run-cpu-2 0.486756 0.184010 0.254122
+run-cpu-4 0.323775 0.138117 0.139196
+run-cpu-8 0.365303 0.071953 0.078004
+run-gpu-1 0.076610 0.024435 0.066958
+run-gpu-4 0.459225 0.135032 0.112417
+run-gpu-8 0.453679 0.073867 0.061706
+Table 2: Cold-start timings.
+Configuration Small Median Large
+run-cpu-1 0.479443 0.310202 0.453884
+run-cpu-2 0.317016 0.168014 0.230706
+run-cpu-4 0.248290 0.093910 0.116040
+run-cpu-8 0.213926 0.061813 0.060513
+run-gpu-1 0.061917 0.021645 0.057782
+run-gpu-4 0.389616 0.062464 0.043022
+run-gpu-8 0.395305 0.057773 0.028223
+Table 3: Hot-start timings.
+In contrast, multi-rank CPU runs also show substantial time reductions for the median
+and large grids, dropping to 0.0719s and 0.0780s respectively on cpu8. Meanwhile,
+gpu8 achieves around 0.0617s on the large grid, demonstrating strong GPU concur-
+rency even at cold startup.
+Table3reportsthehot-startscenario(thesecondandthirdruns). Asanticipated,GPU
+times are lower because the device is already active:
+• Small: gpu1 improves from 0.0766s (cold) down to 0.0619s, while cpu1 changes
+from 0.5241s to 0.4794s.
+• Median: gpu4 and gpu8 reduce to 0.0625s and 0.0578s, respectively, slightly out-
+performing cpu8 at 0.0618s.
+• Large: gpu8 reaches 0.0282s, far exceeding cpu8 at 0.0605s.
+Taken together, these data suggest several key observations:
+• Scaling on CPU vs. GPU: Both CPU and GPU versions benefit from increased
+ranks, but GPUs often excel on larger grids due to higher concurrency.
+• Cold-Start vs. Hot-Start: GPU initialization introduces some overhead, but once
+incurred, repeated runs (hot-start) provide consistently better performance.
+• Small vs. Large Problems: For smaller grids, single-rank CPU and GPU are rela-
+tivelyclose,asoverheadstronglyaffectsoverallruntime. Largerproblemshighlighta
+more pronounced GPU advantage, especially at higher ranks.
+In summary, multi-GPU configurations outperform their CPU counterparts at larger
+7
+scales, while single-GPU setups can match or exceed single-CPU performance once
+the GPU is fully initialized.
+5 Discussion
+5.1 Reflection on Performance
+Thecodeshowsstrongscalingbehaviorwhenadditionalranksareintroduced,bothon
+CPUs and GPUs. On a single GPU, memory bandwidth and kernel launch overhead
+can sometimes limit performance, especially for smaller problem sizes. When multiple
+GPUsoperateinparallel,communicationoverheadgrows,butbatchedupdateshelpto
+reduce frequent synchronization. The reduced number of kernel launches per iteration
+increases device occupancy and allows more efficient use of GPU resources. Still,
+somesuboptimalperformancemayarisefromMPIoverhead,thecostofrepeatedhalo
+exchanges, and the inherent latency in host-device transfers.
+5.2 Comparison with Theoretical Limits
+Modern GPUs like the V100 offer high theoretical memory bandwidth (over 800GB/s)
+and substantial compute throughput. As a rough estimate, consider a 4096×4096 grid
+where each site requires reading and writing 16bytes (4 floats of 4bytes each). This
+amounts to:
+4096×4096×16 ≈ 268,435,456bytes ≈ 256MB
+Under an ideal 800GB/s bandwidth, the fastest possible time for processing a single
+iteration of the entire grid would be around:
+256MB
+T = ≈ 0.32ms.
+min
+800GB/s
+In practice, the best observed execution on a V100 for a comparable problem is tens
+of milliseconds. Much of this discrepancy arises from MPI halo exchanges, atomic
+updates, and the repeated kernel launches that percolation requires. On CPUs, mem-
+ory access patterns and cache behavior add their own constraints, so achieving peak
+theoretical throughput is challenging. Minor tuning of block sizes, overlapping commu-
+nication and computation, and more efficient data layout could improve performance,
+but the communication-heavy nature of this problem makes full utilization of hardware
+bandwidth unlikely.
+5.3 Further Improvements
+Possible directions for enhancing performance include:
+• OverlappingCommunicationandComputation: Whilethecodecurrentlywaitsfor
+haloexchangestofinishbeforelaunchingthenextkernel,somerankscouldproceed
+with partial interior updates while halo data is still in transit.
+8
+• Specialized CUDA or SYCL Intrinsics: Using lower-level CUDA atomic opera-
+tionsorcertainSYCLbuilt-inscouldacceleratethein-kernelreductionandboundary
+checks if these optimizations fit the SYCL model.
+• KernelTuning: Adaptingblocksizesorexperimentingwithdifferentlocalmemoryus-
+agecouldimproveoccupancyandreducecontentionduringthereductionofchanged
+cells.
+9

@@ -1,0 +1,59 @@
+paper_pdf,paper_name
+1-s2.0-S0022096520305142-main.pdf,Fostering early numerical competencies by playing conventional board games
+1-s2.0-S027322971400046X-main.pdf,How approximate and exact number skills are related to each other across development: A review
+1-s2.0-S0165011413002583-main.pdf,Development of child’s home environment indexes based on consistent families of aggregation operators with prioritized hierarchical information
+1-s2.0-S0165011413004855-main.pdf,A method for deriving order compatible fuzzy relations from convex fuzzy partitions
+1-s2.0-S0732312304000781-main.pdf,Teaching arithmetic to low-performing, low-SES first graders
+1-s2.0-S0959475216300718-main.pdf,Enhancing arithmetic in pre-schoolers with comparison or number line estimation training: Does it matter?
+1375527.1375529.pdf,Challenges on the Road to Exascale Computing
+1693453.1693454.pdf,Exascale Computing: The challenges and opportunities in the next decade
+1996130.1996132.pdf,Exascale Opportunities and Challenges
+2185475.2185478.pdf,Position paper: Towards a codelet-based runtime for exascale computing
+2629451.pdf,A Lightweight Data Location Service for Nondeterministic Exascale Storage Systems
+2740769.2740862.pdf,Data Mapping Framework in a Digital Library with Computational Epidemiology Datasets
+2830168.2830173.pdf,Testing and Debugging Exascale Applications by Mocking MPI
+2938615.2938616.pdf,Extreme-scaling applications en route to exascale
+2989081.2989121.pdf,Checkpointing Exascale Memory Systems with Existing Memory Technologies
+3132525.3132547.pdf,Epidemiology as a Framework for Large-Scale
+Mobile Application Accessibility Assessment
+3144769.3144774.pdf,In Situ Workflows at Exascale: System Software to the Rescue
+3242789.3242827.pdf,Descriptive Epidemiology of Neonatal Mortality in Gowa District 2015
+3394277.3401855.pdf,A Smoothed Particle Hydrodynamics Mini-App for Exascale
+3418094.3418142.pdf,Summarize the Etiology and Epidemiology Characteristics of the New Coronavirus
+3472811.pdf,Analyzing the Direct and Transitive Impact of Vulnerabilities onto Diferent Artifact Repositories
+3485847.pdf,An evaluation of Graph Databases and Object-Graph Mappers in CIDOC CRM-compliant digital archives
+3491418.3530293.pdf,Exchanging Best Practices for Supporting Computational and Data-Intensive Research, The Xpert Network
+3491418.3530766.pdf,Anvil - System Architecture and Experiences from Deployment and Early User Operations
+3491418.3530773.pdf,High Performance MPI over the Slingshot Interconnect: Early Experiences
+3491418.3535134.pdf,Integrating End-to-End Exascale SDN into the LHC Data Distribution Cyberinfrastructure
+3511094.pdf,Energy Eficient Computing Systems: Architectures, Abstractions and Modeling to Techniques and Standards
+3512290.3528764.pdf,DiBB: Distributing Black-Box Optimization
+3522586.pdf,Defining a Knowledge Graph Development Process Through a Systematic Review
+3522691.pdf,Finding Key Structures in MMORPG Graph with Hierarchical Graph Summarization
+3529258.pdf,Algorithm XXXX: VTMOP: Solver for Blackbox Multiobjective Optimization Problems
+3533770.pdf,Detecting Anomalous Graphs in Labeled Multi-Graph Databases
+3533855.pdf,Online Application Guidance for Heterogeneous Memory Systems
+3538225.pdf,Energy-eficient Database Systems: A Systematic Survey
+3538492.pdf,A Novel Graph Indexing Approach for Uncovering Potential COVID-19 Transmission Clusters
+3539801.pdf,Enabling New Flexibility in the SUNDIALS Suite of Nonlinear and Diferential/Algebraic Equation Solvers
+3542927.pdf,Multimodal Graph for Unaligned Multimodal Sequence Analysis via Graph Convolution and Graph Pooling
+3544977.pdf,GRACE: A General Graph Convolution Framework for Atributed Graph Clustering
+3547334.pdf,Tensor Network Quantum Virtual Machine for Simulating Quantum Circuits at Exascale
+4551057a.pdf,The mental wealth of nations
+215714542.pdf,Harry Potter as a Piece of Apocalyptic Fiction
+236297027.pdf,The Impact of Degraded Speech and Stimulus Familiarity in a Dichotic Listening Task
+296274270.pdf,Harry Potter and the Cursed Child: Rewriting Stereotypes
+1046878120925133.pdf,Green Across the
+Board: Board Games as Tools for Dialogue and Simplified Environmental Communication
+ContentServer.pdf,Game-based learning. Using board games in adult education
+HP-Paper.pdf,“It just gives people hope”: A qualitative inquiry into the lived experience of the Harry Potter world in mental health recovery
+HP-Paper2.pdf,The Use of Harry Potter and Fairytales in Narrative Therapy
+HP-Tutors.pdf,Harry potter and the tutors of resilience: an analytic view of j. k. rolling tales
+icst.valuetools.2013.254414.pdf,On Celebrity, Epidemiology and the Internet
+nursing.pdf,The effects of bibliotherapy on the mental well-being of informal caregivers of people with neurocognitive disorder: A systematic review and meta-analysis
+Preschool and primary school influences on the development of children s early numeracy skills between the ages of 3 and 7 years in Germany.pdf,Preschool and primary school influences on the development of children's early numeracy skills between the ages of 3 and 7 years in Germany
+s13030-019-0146-3.pdf,Special series on “effects of board games on health education and promotion” board games as a promising tool for health promotion: a review of recent literature
+s13030-019-0164-1.pdf,The effectiveness of intervention with board games: a systematic review
+surveygraphs.pdf,Survey of Graph Database Models
+sustainability-13-08772-v3.pdf,Board Games in Improving Pupils’ Speaking Skills: A Systematic Review
+yang19c.pdf,LegoNet: Efficient Convolutional Neural Networks with Lego Filters
